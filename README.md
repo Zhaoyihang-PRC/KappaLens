@@ -1,11 +1,13 @@
 # KappaLens
 
-**Auditable atom-group analysis for lattice thermal transport**
+**Auditable, separately runnable lattice and electronic transport analysis**
 
 KappaLens is a Python command-line postprocessor for comparing how selected
 atom groups participate in thermal transport. It reads existing Phono3py
 conductivity results, exported molecular-dynamics heat currents, and spectral
-data. It does **not** run a force calculator, fit an interatomic potential, or
+data. The independent `electrons` module evaluates electronic Boltzmann
+transport from supplied bands, velocities and lifetimes. KappaLens does **not**
+run a force calculator, fit an interatomic potential, or
 claim that a material has a unique “conductivity owned by each atom.”
 
 This repository is a public **demo**. Its two toy systems, atom maps, current
@@ -22,6 +24,9 @@ trajectories, manuscripts, or server configuration are included.
 | `gk` | Time series of total and group heat currents | All ordered group correlation integrals and block standard errors | Green–Kubo contribution under a stated energy/virial partition |
 | `dsf` | Dynasor NPZ or spectrum CSV | Damped-oscillator peak position, width, fit quality | Spectral diagnostic; not a conductivity |
 | `compare` | Completed summaries for multiple systems | Component tables and pairwise differences | Like-for-like comparison within one method |
+| `electron-export` | Legacy VASP `EIGENVAL`, `GROUPVEC`, `KPOINTS`, `SYMMETRY`, `POSCAR` | Checked full-mesh state table with stable IDs | Format conversion, no transport calculation |
+| `electrons` | Explicit electronic states and one lifetime source | Full `σ`, `S`, `κₑ` tensors, carrier scan, diagnostics | Independent-band Boltzmann RTA |
+| `thermoelectric` | Completed `electrons` and `modes` or `gk` summaries | `κₑ + κₗ`, power factor, conditional `ZT` | Joined only after matching temperature, direction and normalization |
 
 The group names are user-defined: `framework`/`pendant`, `mainchain`/
 `sidechain`, `linker`/`guest`, or another exhaustive partition. Each atom in a
@@ -50,6 +55,13 @@ instead use an explicit `heat_current_groups` list without a phonon atom map.
   here. A vacuum-containing 2D cell requires an explicit sheet/thickness
   normalization before comparing its reported W/(m·K) to other systems
   ([13](#ref-13)).
+- `electrons` reimplements the transport integrals independently; it does not
+  bundle, execute, or reproduce TransOpt source code. It does **not** calculate
+  electron–phonon, impurity, or hopping rates from first principles. Named
+  rate columns must come from a validated external calculation. This separation
+  follows the scope of band-transport tools such as TransOpt [14](#ref-14)
+  and the limits emphasized by first-principles scattering work
+  [15](#ref-15), [16](#ref-16), [19](#ref-19).
 
 These references explain the underlying methods and their limitations. They
 do **not** validate KappaLens against real Phono3py or MD outputs.
@@ -73,8 +85,11 @@ kappalens check --config examples/demo/project.json
 kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
+kappalens electrons --config examples/demo/project.json
+kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
+kappalens compare --config examples/demo/project.json --stage electrons
 ```
 
 The generated inputs and outputs are under `examples/demo/data/` and
@@ -184,9 +199,86 @@ matching temperatures and direction vectors. Group labels and their meaning
 must be comparable across models. Never add the Phono3py projection to the
 Green–Kubo result: they are different analyses of thermal transport.
 
+### 5. Electronic transport, independently of phonons
+
+`kappalens electrons --config project.json --model NAME` needs an `electronic`
+section. It never calls `modes`, `gk`, `dsf`, or TransOpt. Choose one source:
+
+- `source: "states_csv"`: one row per band/k/spin state, with columns
+  `state_id,k_index,band_index,spin,energy_ev,v_x_m_s,v_y_m_s,v_z_m_s,k_weight`.
+  Optional columns are `tau_s` for the `state_tau` lifetime mode and
+  `k_x,k_y,k_z` for fractional coordinates. Every spin channel's unique k
+  weights must sum to one, and every k/spin combination must have the same
+  bands. Set `spin_degeneracy` explicitly: `2` for a nonmagnetic calculation
+  without SOC, `1` for explicit spin channels or SOC spinors.
+- `source: "vasp_legacy"`: specify `eigenval`, `groupvec`, `kpoints`,
+  `symmetry`, and `poscar`. This adapter accepts the legacy `GROUPVEC` layout;
+  standard VASP calculations do **not** necessarily create `GROUPVEC`.
+  Specify `velocity_unit` as `m_per_s`, `ev_angstrom` (the derivative
+  ∂E/∂k), or `custom` plus `velocity_scale_to_m_s`. Set `time_reversal`
+  explicitly. The reader expands symmetry, rotates Cartesian velocities,
+  and rejects incomplete, irregular, or duplicate/shifted meshes rather than
+  indexing past a k-grid. Magnetic systems need a checked symmetry export;
+  no time reversal is inferred from filenames. To inspect stable IDs before
+  obtaining external rates, run `kappalens electron-export --config project.json
+  --model NAME`; the resulting `expanded_states.csv` is also a valid
+  `states_csv` input.
+
+Use exactly one lifetime source in `relaxation`: `constant` with `tau_s`,
+`state_tau` with a `tau_s` column and `temperature_k`, or `rates_csv` with a
+matching `temperature_k`, `state_id`, and explicitly listed nonnegative rate
+columns such as `acoustic_s_inv`, `optical_s_inv`, and `impurity_s_inv`.
+Rates are combined as `τ⁻¹ = Σᵢ Γᵢ`; all included mechanisms must be listed,
+and no old `TAU_fullmesh` is silently reused. The optional
+`mechanism_fractions.csv` reports **transport-weighted rate fractions**, not
+additive conductivity fractions. State-resolved optical rates can include
+nonpolar low-energy modes that a single polar-optical-frequency model misses
+in a 2D COF [16](#ref-16). EPW/Perturbo or another verified source may
+produce these rates, but native output conversion and k/band alignment must
+be validated separately [19](#ref-19).
+
+Set `dimensionality` explicitly to `3d` or `2d`; for a 2D sheet provide
+`sheet_normal_cart`, `sheet_repeat_length_ang`, and in-plane
+`electronic.directions_cart`. The output includes both vacuum-dependent 3D
+values and vacuum-invariant sheet conductance/thermal conductance. Supply
+either `chemical_potentials_ev`, `extra_electrons_per_cell`,
+`extra_carriers_cm3` (3D) or `extra_carriers_cm2` (2D). Carrier targets require
+`reference_electrons_per_cell`; the VASP adapter obtains it from EIGENVAL
+`NELECT`. The band window must contain the required occupations.
+
+Optional `state_character_csv` has `state_id` and exhaustive group weights
+that sum to one per state. It reports orbital-character-weighted conductivity
+as a **diagnostic**, not a unique framework/side-chain ownership or a new
+scattering mechanism. Optional `transfer_fluctuations_csv` has
+`time_ps,pair,transfer_ev`; it reports mean, standard deviation, and relative
+fluctuation only. Those measurements can motivate a separate hopping or
+transient-localization calculation, but do not identify a transport regime
+on their own [17](#ref-17), [18](#ref-18).
+
+For cross-system electron comparisons, choose an explicit
+`electronic_comparison_basis`: `chemical_potential_ev`, `extra_carriers_cm3`,
+or `extra_carriers_cm2`. A shared absolute chemical potential is meaningful
+only if energy references are aligned. Density-based scans are generally more
+useful for different chemical structures. `compare --stage electrons` checks
+the basis, temperature, dimensionality, direction vectors and scan grid.
+
+### 6. Join electronic and lattice estimates only when comparable
+
+`kappalens thermoelectric --config project.json --model NAME` reads completed
+results; it never reruns either calculation. Set `thermoelectric.lattice_stage`
+to `modes` or `gk`, `lattice_dimensionality` to match the electronic result,
+and `same_cell_normalization_verified: true` only after checking the source
+cells and units. A 2D project also needs a matching
+`lattice_sheet_repeat_length_ang`. It rejects mismatched temperatures,
+directions, 2D repeat lengths and available GK volumes. `modes` supplies
+**intraband-only** lattice conductivity, so its reported `ZT` is labelled a
+proxy; omitted Wigner/interband transport can change the denominator. The GK
+result includes only its lattice block standard error, not electronic-model
+uncertainty. No electronic rate is mistaken for a phonon lifetime.
+
 ## Development and release status
 
-This is version **0.1.0**, an alpha demo. The repository contains synthetic
+This is version **0.2.0**, an alpha demo. The repository contains synthetic
 tests and CI; any new reader or scientific interpretation should be validated
 against real, independently checked software outputs before publication of a
 material result. Contributions and issue reports should include a minimal
@@ -198,10 +290,11 @@ Licensed under [MIT](LICENSE).
 
 # 中文说明
 
-**KappaLens：按原子组分析晶格热输运的可核查后处理程序**
+**KappaLens：晶格与电子输运可独立运行、可核查的后处理程序**
 
 KappaLens 读取已有的 Phono3py 热导结果、分组热流时间序列和振动谱数据。它
-不会提交第一性原理或分子动力学任务，也不会自动生成势函数。程序中的“分组贡献”
+还可单独读取电子态、速度和弛豫时间，计算电子输运张量。它不会提交第一性原理
+或分子动力学任务，也不会自动生成势函数。程序中的“分组贡献”
 必须结合所用方法解释，不能理解为每个原子具有唯一、独立的热导率。
 
 本仓库是可公开的**演示版**。`examples/demo/generate_demo.py` 生成两个完全合成的
@@ -216,6 +309,9 @@ KappaLens 读取已有的 Phono3py 热导结果、分组热流时间序列和振
 | `gk` | 总热流和各组热流的时间序列 | Green–Kubo 自关联、全部有序交叉关联、积分曲线与分块标准误 |
 | `dsf` | Dynasor NPZ 或频谱 CSV | 指定峰的阻尼振子拟合参数；峰宽本身不是热导率 |
 | `compare` | 多个体系已经完成的结果 | 同一方法下的分组表和体系间差值 |
+| `electron-export` | 旧式 VASP `EIGENVAL/GROUPVEC` 等文件 | 核查后展开为带稳定编号的全 k 网格电子态表 |
+| `electrons` | 电子能量、速度及一种寿命来源 | 电导、Seebeck、电子热导的完整张量和载流子扫描 |
+| `thermoelectric` | 分别完成的电子与晶格结果 | 在维度和单位一致时合并为功率因子与条件性 `ZT` |
 
 原子组名称可以是 `framework`/`pendant`、`mainchain`/`sidechain` 等，不要求
 某一组必须叫 `backbone`。对声子模态，每个原胞原子必须恰好归入一个组；仅做
@@ -244,14 +340,17 @@ kappalens check --config examples/demo/project.json
 kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
+kappalens electrons --config examples/demo/project.json
+kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
+kappalens compare --config examples/demo/project.json --stage electrons
 ```
 
 输入和结果分别生成在 `examples/demo/data/` 与
 `examples/demo/analysis_results/`，这两个目录不会上传到 Git。如果尚未安装
 `h5py`，可不加 `--require-hdf5` 运行生成器，先体验 `gk`、`dsf` 以及
-`compare --stage gk`。演示 HDF5 只是用于验证文件接口，**不是**真正由
+`electrons`、`compare --stage gk/electrons`。演示 HDF5 只是用于验证文件接口，**不是**真正由
 力常数计算得到的声子结果。
 
 运行测试：
@@ -322,9 +421,43 @@ CSV 需要等间隔的 `time_ps` 或 `time_fs` 列、`Q_total_x/y/z`，以及各
 `gk` 运行；两者是不同的分析方法，**不可直接相加**。跨材料比较时还须保持
 组定义、温度、方向和体积约定一致。
 
+### 独立的电子输运模块
+
+新模块独立实现电子玻尔兹曼弛豫时间近似，没有复制、打包或调用 TransOpt
+源码；原先的 `modes/gk/dsf` 命令及其输入格式不受影响。它用**矩阵运算**
+处理非对角张量，先汇总自旋通道的输运矩再求 Seebeck 与电子热导，不再按
+张量元素各自相乘。旧式 VASP 读取器检查完整 k 网格与对称性，并要求用户
+明确声明速度单位、自旋简并和是否使用时间反演。标准 VASP 输出未必含有
+`GROUPVEC`；所用 VASP 补丁与该文件单位需要单独核对。
+
+最通用的输入是 `states_csv`：每个电子态一行，含
+`state_id,k_index,band_index,spin,energy_ev,v_x_m_s,v_y_m_s,v_z_m_s,k_weight`。
+也可选 `source: "vasp_legacy"`，提供 `eigenval/groupvec/kpoints/symmetry/poscar`；
+先执行 `electron-export` 检查全网格状态编号，再用这些编号制作外部
+散射率表。`relaxation` 只能选恒定 `tau_s`、每态 `tau_s`，或按 `state_id`
+列出的多机制散射率。声学、光学、杂质等列可**分别**输入，程序按总散射率
+求寿命；它目前**不会根据能带自动生成这些物理散射率**，也不会暗中读取旧的
+`TAU_fullmesh`。低能非极性光学模对二维 COF 可能重要，不能拿单频极性模型
+代替所有光学模 ([16](#ref-16))。
+
+二维模型须写明 `dimensionality: "2d"`、片层法向与周期重复长度，输出
+面内片电导和片热导，防止改变真空层时直接比较含真空的 W/(m·K)。载流子
+扫描可以指定化学势、每晶胞多出的电子数，或三维 `cm⁻³` / 二维 `cm⁻²`
+浓度；跨不同结构比较时优先使用可比的浓度，并检查能量零点。可选的
+`state_character_csv` 只提供框架/侧链轨道特征的**投影诊断**，并非唯一
+可分割的电导；`transfer_fluctuations_csv` 只报告转移积分的波动幅度，
+不会凭这一指标宣称已算出跳跃或瞬态局域化迁移率 ([17](#ref-17),
+[18](#ref-18))。
+
+电子结果与晶格结果可以分别使用。需要合并时，先完成 `electrons` 和
+`modes` 或 `gk`，再运行 `thermoelectric`。配置必须明确确认两部分温度、
+方向、晶胞体积及二维厚度约定一致。`modes` 的晶格热导只含带内部分，
+相应 `ZT` 标记为近似指标，不能冒充包含 Wigner 带间贡献的完整结果。
+英文部分提供了完整 JSON 字段和输出含义。
+
 ## 开发状态
 
-当前版本 **0.1.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
+当前版本 **0.2.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
 独立核验过的输出进行验证。提交问题或改进建议时请使用合成或可公开的最小
 示例，不要上传尚未公开的研究数据。
 
@@ -349,5 +482,11 @@ not validation results for this demo. 使用真实结果撰写论文时，还应
 - <a id="ref-11"></a>**[11]** Ercole, L., Marcolongo, A. & Baroni, S. “Accurate thermal conductivities from optimally short molecular dynamics simulations.” *Scientific Reports* **7**, 15835 (2017). [doi:10.1038/s41598-017-15843-2](https://doi.org/10.1038/s41598-017-15843-2). Green–Kubo estimation and uncertainty context.
 - <a id="ref-12"></a>**[12]** Fransson, E., Slabanja, M., Erhart, P. & Wahnström, G. “dynasor—A tool for extracting dynamical structure factors and current correlation functions from molecular dynamics simulations.” *Advanced Theory and Simulations* **4**, 2000240 (2021). [doi:10.1002/adts.202000240](https://doi.org/10.1002/adts.202000240). Spectral analysis context.
 - <a id="ref-13"></a>**[13]** Wu, X. *et al.* “How to characterize thermal transport capability of 2D materials fairly? Sheet thermal conductance and the choice of thickness.” *Chemical Physics Letters* **669**, 233–237 (2017). [doi:10.1016/j.cplett.2016.12.054](https://doi.org/10.1016/j.cplett.2016.12.054). Thickness convention for 2D comparisons.
+- <a id="ref-14"></a>**[14]** Li, X. *et al.* “TransOpt. A code to solve electrical transport properties of semiconductors in constant electron–phonon coupling approximation.” *Computational Materials Science* (2021). [doi:10.1016/j.commatsci.2020.110074](https://doi.org/10.1016/j.commatsci.2020.110074). Historical comparison; no TransOpt code is included.
+- <a id="ref-15"></a>**[15]** Ganose, A. M. *et al.* “Efficient calculation of carrier scattering rates from first principles.” *Nature Communications* **12**, 2222 (2021). [doi:10.1038/s41467-021-22440-5](https://doi.org/10.1038/s41467-021-22440-5). Anisotropic scattering and the limits of constant lifetime models.
+- <a id="ref-16"></a>**[16]** “Phonon-Limited Electron Transport in a Highly Conductive Two-Dimensional Covalent Organic Framework: A Computational Study.” *Journal of Physical Chemistry C* **126**, 20127–20134 (2022). [doi:10.1021/acs.jpcc.2c06211](https://doi.org/10.1021/acs.jpcc.2c06211). Mode-resolved optical-phonon scattering in a 2D COF.
+- <a id="ref-17"></a>**[17]** Hutsch, S. & Ortmann, F. “Impact of heteroatoms and chemical functionalisation on crystal structure and carrier mobility of organic semiconductors.” *npj Computational Materials* **10**, 206 (2024). [doi:10.1038/s41524-024-01397-1](https://doi.org/10.1038/s41524-024-01397-1). Dynamic-disorder context.
+- <a id="ref-18"></a>**[18]** “Intuitive and Efficient Approach to Determine the Band Structure of Covalent Organic Frameworks from Their Chemical Constituents.” *Journal of Chemical Theory and Computation* (2024). [doi:10.1021/acs.jctc.3c01302](https://doi.org/10.1021/acs.jctc.3c01302). Localized representation and alternative transport regimes in soft COFs.
+- <a id="ref-19"></a>**[19]** “Perturbo: A software package for ab initio electron–phonon interactions, charge transport and ultrafast dynamics.” *Computer Physics Communications* **264**, 107970 (2021). [doi:10.1016/j.cpc.2021.107970](https://doi.org/10.1016/j.cpc.2021.107970). External state-resolved scattering and iterative BTE comparison.
 
 Software format details should be checked against the current [Phono3py HDF5 documentation](https://phonopy.github.io/phono3py/input-output-files.html), [Phono3py citation guidance](https://phonopy.github.io/phono3py/citation.html), and [LAMMPS heat-flux documentation](https://docs.lammps.org/compute_heat_flux.html).

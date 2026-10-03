@@ -61,6 +61,34 @@ def generate(name: str, scale: float, seed: int, h5py_module) -> None:
         for x, a, b in zip(omega, framework_s, pendant_s):
             writer.writerow([0, 0, 0, 0, x, a, b])
 
+    # Calculator-neutral electronic fixtures. Rates and orbital characters are
+    # deliberately arbitrary; they demonstrate file matching and tensor math.
+    k_vectors = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]], dtype=float)
+    with (out / "electron_states.csv").open("w", newline="", encoding="utf-8") as f_state, \
+         (out / "electron_rates.csv").open("w", newline="", encoding="utf-8") as f_rate, \
+         (out / "electron_character.csv").open("w", newline="", encoding="utf-8") as f_character:
+        state_writer = csv.writer(f_state)
+        rate_writer = csv.writer(f_rate)
+        char_writer = csv.writer(f_character)
+        state_writer.writerow(["state_id", "k_index", "band_index", "spin", "energy_ev",
+                               "v_x_m_s", "v_y_m_s", "v_z_m_s", "k_weight"])
+        rate_writer.writerow(["state_id", "acoustic_s_inv", "optical_s_inv", "impurity_s_inv"])
+        char_writer.writerow(["state_id", "framework", "pendant"])
+        for ik, vector in enumerate(k_vectors):
+            for band in (1, 2):
+                sid = f"k{ik:06d}_b{band:04d}_s0"
+                energy = (-0.08 if band == 1 else 0.10) + 0.015*ik
+                velocity = vector*scale*(1.0 if band == 1 else 0.7)*1e5
+                state_writer.writerow([sid, ik, band, 0, energy, *velocity, 0.25])
+                rate_writer.writerow([sid, 1.1e13+ik*1e12, 0.5e13+band*0.3e13, 0.2e13])
+                character = 0.75 if band == 1 else 0.45
+                char_writer.writerow([sid, character, 1-character])
+    with (out / "transfer_fluctuations.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["time_ps", "pair", "transfer_ev"])
+        for i in range(32):
+            writer.writerow([i*0.05, "framework-pendant", 0.08+0.012*np.sin(i*0.8)])
+
     if h5py_module is not None:
         frequencies = np.array([[0.6, 0.9, 1.2, 1.6, 2.1, 2.6]])
         mode_kappa = np.zeros((1, 1, 6, 6))
