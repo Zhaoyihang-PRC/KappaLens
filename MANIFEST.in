@@ -1,0 +1,7 @@
+include README.md LICENSE pyproject.toml setup.cfg setup.py
+recursive-include src *.py
+recursive-include tests *.py
+recursive-include examples *.py *.json
+prune examples/demo/data
+prune examples/demo/analysis_results
+global-exclude __pycache__ *.pyc *.pyo .DS_Store

@@ -1,0 +1,51 @@
+{
+  "output_dir": "analysis_results",
+  "gk_blocks": 4,
+  "max_lag_ps": 0.5,
+  "plateau_ps": [0.1, 0.3],
+  "models": [
+    {
+      "name": "demo_a",
+      "atom_map": "data/demo_a/atom_map.csv",
+      "groups_csv": "data/demo_a/groups.csv",
+      "temperature_k": 300,
+      "directions_cart": {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]},
+      "primitive_order_matches_atom_map": true,
+      "group_star_invariant": true,
+      "kappa_hdf5": "data/demo_a/kappa-demo.hdf5",
+      "phonon_hdf5": "data/demo_a/phonon-demo.hdf5",
+      "heat_current_csv": "data/demo_a/heat_current.csv",
+      "heat_current_unit": "ev_angstrom_per_ps",
+      "volume_ang3": 2000,
+      "dsf_csv": "data/demo_a/spectrum.csv",
+      "dsf_omega_unit": "rad/ps (synthetic)",
+      "dsf_fit_windows": [
+        {"field": "Clqw_framework_framework", "q_index": 0, "omega_min": 0.5, "omega_max": 3.5},
+        {"field": "Clqw_pendant_pendant", "q_index": 0, "omega_min": 0.5, "omega_max": 3.5}
+      ]
+    },
+    {
+      "name": "demo_b",
+      "atom_map": "data/demo_b/atom_map.csv",
+      "groups_csv": "data/demo_b/groups.csv",
+      "temperature_k": 300,
+      "directions_cart": {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]},
+      "primitive_order_matches_atom_map": true,
+      "group_star_invariant": true,
+      "kappa_hdf5": "data/demo_b/kappa-demo.hdf5",
+      "phonon_hdf5": "data/demo_b/phonon-demo.hdf5",
+      "heat_current_csv": "data/demo_b/heat_current.csv",
+      "heat_current_unit": "ev_angstrom_per_ps",
+      "volume_ang3": 2000,
+      "dsf_csv": "data/demo_b/spectrum.csv",
+      "dsf_omega_unit": "rad/ps (synthetic)",
+      "dsf_fit_windows": [
+        {"field": "Clqw_framework_framework", "q_index": 0, "omega_min": 0.5, "omega_max": 3.5},
+        {"field": "Clqw_pendant_pendant", "q_index": 0, "omega_min": 0.5, "omega_max": 3.5}
+      ]
+    }
+  ],
+  "comparisons": [
+    {"name": "synthetic_b_minus_a", "left": "demo_a", "right": "demo_b"}
+  ]
+}
