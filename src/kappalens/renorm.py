@@ -258,7 +258,18 @@ def _report(summary: dict, rows: list[dict]) -> str:
                   "The Fan/Debye–Waller arrays are checked but are **not** assigned "
                   "to separate gap shifts; that requires validated band-edge state mapping.",
                   "This report does not calculate electronic transport or group-resolved scattering.",
-                  "Check k/q mesh, supercell, ENCUT, NBANDS and broadening convergence before using values in research.", ""])
+                  "Check k/q mesh, supercell, ENCUT, NBANDS and broadening convergence before using values in research.",
+                  "", "## Literature context", "",
+                  "- VASP documentation: [gap workflow](https://vasp.at/wiki/Bandgap_renormalization_due_to_electron-phonon_coupling), "
+                  "[accumulator format](https://vasp.at/wiki/Electron-phonon_accumulators), "
+                  "and [known issues](https://vasp.at/wiki/Known_issues).",
+                  "- Ning, Lei, Yang & Xi, *Phys. Chem. Chem. Phys.* **25**, 26006–26013 (2023), "
+                  "[doi:10.1039/D3CP03596D](https://doi.org/10.1039/D3CP03596D): "
+                  "temperature-dependent band renormalization and state linewidths.",
+                  "- Zhao, Li, Xi & Yang, *Comput. Mater. Today* **5**, 100019 (2025), "
+                  "[doi:10.1016/j.commt.2024.100019](https://doi.org/10.1016/j.commt.2024.100019): "
+                  "different 2D band edges can shift differently with temperature.",
+                  "These papers give context; they do not validate this file or calculation.", ""])
     return "\n".join(lines)
 
 
