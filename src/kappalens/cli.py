@@ -12,6 +12,7 @@ from .dsf import analyze_dsf
 from .electrons import analyze_electrons, export_electron_states
 from .gk import analyze_gk
 from .modes import analyze_modes
+from .renorm import analyze_renorm
 from .thermoelectric import analyze_thermoelectric
 
 
@@ -19,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kappalens", description="Independent lattice and electronic transport analysis")
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["check", "init-groups", "modes", "gk", "dsf", "electrons",
+    for name in ["check", "init-groups", "modes", "gk", "dsf", "electrons", "renorm",
                  "electron-export", "thermoelectric"]:
         command = sub.add_parser(name)
         command.add_argument("--config", required=True, help="project JSON file")
@@ -58,11 +59,20 @@ def main(argv: list[str] | None = None) -> int:
                     path = resolve(config, relaxation["rates_csv"], "electronic.relaxation.rates_csv")
                     print(f"{model['name']} electronic.relaxation.rates_csv: "
                           f"{'found' if path.is_file() else 'missing'} {path}")
+                electron_phonon = model.get("electron_phonon", {})
+                for key in ("vaspout_h5", "incar", "poscar", "kpoints", "outcar"):
+                    if electron_phonon.get(key):
+                        path = resolve(config, electron_phonon[key],
+                                       f"{model['name']}.electron_phonon.{key}")
+                        print(f"{model['name']} electron_phonon.{key}: "
+                              f"{'found' if path.is_file() else 'missing'} {path}")
                 continue
             elif args.command == "thermoelectric":
                 result = analyze_thermoelectric(config, model)
             elif args.command == "electron-export":
                 result = export_electron_states(config, model)
+            elif args.command == "renorm":
+                result = analyze_renorm(config, model)
             else:
                 result = {"modes": analyze_modes, "gk": analyze_gk, "dsf": analyze_dsf,
                           "electrons": analyze_electrons}[args.command](config, model)

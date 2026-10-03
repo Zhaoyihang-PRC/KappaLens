@@ -90,6 +90,32 @@ def generate(name: str, scale: float, seed: int, h5py_module) -> None:
             writer.writerow([i*0.05, "framework-pendant", 0.08+0.012*np.sin(i*0.8)])
 
     if h5py_module is not None:
+        # Minimal, entirely synthetic VASP-style electron-phonon HDF5 fixture.
+        # Values are chosen to exercise the schema and report, not to model a
+        # real potential, self-energy, or material. Real VASP output still
+        # needs a separate compatibility and convergence check.
+        with h5py_module.File(out / "vaspout-synthetic.h5", "w") as f:
+            f.attrs["kappalens_synthetic_demo"] = True
+            f["version/major"] = 6
+            f["version/minor"] = 5
+            f["version/patch"] = 1
+            f["original/incar"] = np.bytes_(
+                "ISPIN = 1\nISYM = 0\nELPH_MODE = RENORM\n"
+                "ELPH_SELFEN_GAPS = .TRUE.\n")
+            electrons = f.require_group("results/electron_phonon/electrons")
+            electrons["self_energy_meta/ncalculators"] = 1
+            self_energy = electrons.require_group("self_energy_1")
+            self_energy["temps"] = [0.0, 300.0, 600.0]
+            self_energy["delta"] = 0.01
+            self_energy["nbands_sum"] = 8
+            self_energy["selfen_fan"] = np.zeros((2, 1, 3, 2))
+            self_energy["selfen_dw"] = np.zeros((2, 3))
+            self_energy["direct_gap"] = [1.20]
+            self_energy["direct_gap_renorm"] = [
+                [1.20 - scale * shift for shift in (0.04, 0.06, 0.09)]]
+            self_energy["fundamental_gap"] = [0.95]
+            self_energy["fundamental_gap_renorm"] = [
+                [0.95 - scale * shift for shift in (0.03, 0.05, 0.08)]]
         frequencies = np.array([[0.6, 0.9, 1.2, 1.6, 2.1, 2.6]])
         mode_kappa = np.zeros((1, 1, 6, 6))
         for band in range(6):

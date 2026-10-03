@@ -26,6 +26,7 @@ trajectories, manuscripts, or server configuration are included.
 | `compare` | Completed summaries for multiple systems | Component tables and pairwise differences | Like-for-like comparison within one method |
 | `electron-export` | Legacy VASP `EIGENVAL`, `GROUPVEC`, `KPOINTS`, `SYMMETRY`, `POSCAR` | Checked full-mesh state table with stable IDs | Format conversion, no transport calculation |
 | `electrons` | Explicit electronic states and one lifetime source | Full `σ`, `S`, `κₑ` tensors, carrier scan, diagnostics | Independent-band Boltzmann RTA |
+| `renorm` | VASP `vaspout.h5` electron–phonon gap data | Version and shape checks; gap-versus-temperature CSV and Markdown report | Read-only band-gap renormalization, independent of transport |
 | `thermoelectric` | Completed `electrons` and `modes` or `gk` summaries | `κₑ + κₗ`, power factor, conditional `ZT` | Joined only after matching temperature, direction and normalization |
 
 The group names are user-defined: `framework`/`pendant`, `mainchain`/
@@ -62,9 +63,15 @@ instead use an explicit `heat_current_groups` list without a phonon atom map.
   follows the scope of band-transport tools such as TransOpt [14](#ref-14)
   and the limits emphasized by first-principles scattering work
   [15](#ref-15), [16](#ref-16), [19](#ref-19).
+- `renorm` reads VASP electron–phonon HDF5 gaps and checks the Fan and
+  Debye–Waller arrays. It reports `E_gap(T)` and the shift from the Kohn–Sham
+  gap; it does not infer lifetimes, renormalized velocities, or atom-group
+  contributions. See the official [VASP gap workflow](https://vasp.at/wiki/Bandgap_renormalization_due_to_electron-phonon_coupling),
+  [accumulator layout](https://vasp.at/wiki/Electron-phonon_accumulators), and
+  [known issues](https://vasp.at/wiki/Known_issues).
 
 These references explain the underlying methods and their limitations. They
-do **not** validate KappaLens against real Phono3py or MD outputs.
+do **not** validate KappaLens against real VASP, Phono3py or MD outputs.
 
 See the official [Phono3py HDF5 format](https://phonopy.github.io/phono3py/input-output-files.html),
 [interband transport](https://phonopy.github.io/phono3py/inter-band-transport.html),
@@ -86,6 +93,7 @@ kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
 kappalens electrons --config examples/demo/project.json
+kappalens renorm --config examples/demo/project.json
 kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
@@ -265,7 +273,52 @@ only if energy references are aligned. Density-based scans are generally more
 useful for different chemical structures. `compare --stage electrons` checks
 the basis, temperature, dimensionality, direction vectors and scan grid.
 
-### 6. Join electronic and lattice estimates only when comparable
+### 6. VASP electron–phonon renormalization HDF5 demo
+
+`renorm` is a separate, read-only path. Add this to a model and run
+`kappalens renorm --config project.json --model NAME`:
+
+```json
+"electron_phonon": {
+  "vaspout_h5": "path/to/vaspout.h5",
+  "incar": "path/to/INCAR",
+  "poscar": "path/to/POSCAR",
+  "kpoints": "path/to/KPOINTS",
+  "outcar": "path/to/OUTCAR",
+  "accumulator": 1
+}
+```
+
+`incar` is optional if the HDF5 file contains a readable `/original/incar`.
+If both are present, relevant settings must agree. Optional `outcar` checks
+the independently printed VASP version and completed-run footer.
+Optional `poscar` and `kpoints` must match the originals embedded in the HDF5
+file (apart from line endings and final blank lines). These checks never copy
+the input contents to the output report.
+`accumulator` is optional
+only when there is exactly one `self_energy_N` group. If the gap has more than
+one channel, set zero-based `gap_channel`; if the temperature axis is
+ambiguous, set zero-based `temperature_axis`. The reader checks VASP version,
+spin and symmetry settings, complete Fan/Debye–Waller arrays, temperatures,
+band count, broadening and gap shapes. It blocks VASP 6.5.0/6.5.1 `ISPIN=2`
+results because of [known issues 54 and 65](https://vasp.at/wiki/Known_issues), and
+requires `ISYM=0` for magnetic demo results because of open issue 109.
+`summary.json`, `gaps.csv` and `report.md` appear under
+`analysis_results/NAME/renorm/`. A 0 K row gives the zero-point gap shift.
+
+The synthetic generator makes `vaspout-synthetic.h5` in each toy model's
+ignored data directory. It demonstrates the documented layout and rejection
+checks; it is **not** an actual VASP output or a compatibility validation
+against one. The first real output must be checked against VASP or py4vasp,
+then convergence in supercell size, k/q meshes, ENCUT, band sums and
+broadening must be established separately. The Fan/Debye–Waller arrays are
+checked for shape and finite values; the demo does not assign their individual
+contributions to a gap without validated band-edge mapping. It also does not
+feed corrected gaps into `electrons`, which still uses its explicit state and
+lifetime inputs. `vaspout.h5` may contain licensed POTCAR contents: do not
+publish an unredacted real file. [VASP HDF5 guidance](https://vasp.at/wiki/Vaspout.h5).
+
+### 7. Join electronic and lattice estimates only when comparable
 
 `kappalens thermoelectric --config project.json --model NAME` reads completed
 results; it never reruns either calculation. Set `thermoelectric.lattice_stage`
@@ -281,7 +334,7 @@ uncertainty. No electronic rate is mistaken for a phonon lifetime.
 
 ## Development and release status
 
-This is version **0.2.0**, an alpha demo. The repository contains synthetic
+This is version **0.3.0**, an alpha demo. The repository contains synthetic
 tests and CI; any new reader or scientific interpretation should be validated
 against real, independently checked software outputs before publication of a
 material result. Contributions and issue reports should include a minimal
@@ -314,6 +367,7 @@ KappaLens 读取已有的 Phono3py 热导结果、分组热流时间序列和振
 | `compare` | 多个体系已经完成的结果 | 同一方法下的分组表和体系间差值 |
 | `electron-export` | 旧式 VASP `EIGENVAL/GROUPVEC` 等文件 | 核查后展开为带稳定编号的全 k 网格电子态表 |
 | `electrons` | 电子能量、速度及一种寿命来源 | 电导、Seebeck、电子热导的完整张量和载流子扫描 |
+| `renorm` | VASP `vaspout.h5` 中的电声自能与带隙 | 检查版本和数据对应关系，生成带隙随温度变化的报告；不计算电输运 |
 | `thermoelectric` | 分别完成的电子与晶格结果 | 在维度和单位一致时合并为功率因子与条件性 `ZT` |
 
 原子组名称可以是 `framework`/`pendant`、`mainchain`/`sidechain` 等，不要求
@@ -328,7 +382,7 @@ MD 的 Green–Kubo 分析时可以直接指定 `heat_current_groups`，无需�
 [9](#ref-9), [10](#ref-10))。有限孤立分子没有这里使用的体相热导张量；
 含真空二维晶胞的 W/(m·K) 数值也需先明确片层厚度或面热导归一化
 ([13](#ref-13))。这些文献说明方法背景与限制，**不等于** KappaLens 已经通过
-真实 Phono3py 或 MD 数据的验证。
+真实 VASP、Phono3py 或 MD 数据的验证。
 
 ## 安装并运行完整的合成示例
 
@@ -344,6 +398,7 @@ kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
 kappalens electrons --config examples/demo/project.json
+kappalens renorm --config examples/demo/project.json
 kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
@@ -460,9 +515,20 @@ CSV 需要等间隔的 `time_ps` 或 `time_fs` 列、`Q_total_x/y/z`，以及各
 相应 `ZT` 标记为近似指标，不能冒充包含 Wigner 带间贡献的完整结果。
 英文部分提供了完整 JSON 字段和输出含义。
 
+`renorm` 是独立入口。在每个模型下配置 `electron_phonon.vaspout_h5`，可再指定
+`incar`、`poscar`、`kpoints`、`outcar` 和自能累加器编号 `accumulator`。提供
+`poscar` / `kpoints` 时核对 HDF5 内的原始输入文本；提供 `outcar` 时额外核对
+版本与正常结束标记。报告不会复制输入结构。输出为 `renorm/summary.json`、
+`gaps.csv` 和 `report.md`，列出 Kohn–Sham 带隙、重整化带隙及 meV 修正。
+它检查 Fan/Debye–Waller 数据、温度与版本，但不会把带隙修正自动当作电子
+寿命或速度。**VASP 6.5.0/6.5.1 的 `ISPIN=2` 电声结果会被拒绝**；磁性
+体系的示例还要求 `ISYM=0`。这对应 VASP 官方[已知问题](https://vasp.at/wiki/Known_issues)。
+合成 HDF5 仅供接口演示，真实文件仍需与 VASP/py4vasp 核对并完成收敛检查。
+真实 `vaspout.h5` 可能包含有许可证限制的 POTCAR 内容，不能直接上传公开仓库。
+
 ## 开发状态
 
-当前版本 **0.2.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
+当前版本 **0.3.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
 独立核验过的输出进行验证。提交问题或改进建议时请使用合成或可公开的最小
 示例，不要上传尚未公开的研究数据。
 

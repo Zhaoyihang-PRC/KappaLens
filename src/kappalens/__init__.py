@@ -3,4 +3,4 @@
 The package analyses existing simulation results. It never launches VASP or MD.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
