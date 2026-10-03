@@ -9,21 +9,24 @@ from . import __version__
 from .common import AnalysisError, current_groups, get_models, init_groups, load_config, load_groups, resolve
 from .compare import compare_models
 from .dsf import analyze_dsf
+from .electrons import analyze_electrons, export_electron_states
 from .gk import analyze_gk
 from .modes import analyze_modes
+from .thermoelectric import analyze_thermoelectric
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="kappalens", description="Atom-group thermal transport analysis")
+    parser = argparse.ArgumentParser(prog="kappalens", description="Independent lattice and electronic transport analysis")
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["check", "init-groups", "modes", "gk", "dsf"]:
+    for name in ["check", "init-groups", "modes", "gk", "dsf", "electrons",
+                 "electron-export", "thermoelectric"]:
         command = sub.add_parser(name)
         command.add_argument("--config", required=True, help="project JSON file")
         command.add_argument("--model", help="one model name; default: all models")
     cmp_parser = sub.add_parser("compare")
     cmp_parser.add_argument("--config", required=True)
-    cmp_parser.add_argument("--stage", choices=["modes", "gk"], required=True)
+    cmp_parser.add_argument("--stage", choices=["modes", "gk", "electrons"], required=True)
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -44,9 +47,25 @@ def main(argv: list[str] | None = None) -> int:
                     if model.get(key):
                         path = resolve(config, model[key], f"{model['name']}.{key}")
                         print(f"{model['name']} {key}: {'found' if path.is_file() else 'missing'} {path}")
+                electronic = model.get("electronic", {})
+                for key in ("states_csv", "eigenval", "groupvec", "kpoints", "symmetry", "poscar",
+                            "state_character_csv", "transfer_fluctuations_csv"):
+                    if electronic.get(key):
+                        path = resolve(config, electronic[key], f"{model['name']}.electronic.{key}")
+                        print(f"{model['name']} electronic.{key}: {'found' if path.is_file() else 'missing'} {path}")
+                relaxation = electronic.get("relaxation", {})
+                if relaxation.get("rates_csv"):
+                    path = resolve(config, relaxation["rates_csv"], "electronic.relaxation.rates_csv")
+                    print(f"{model['name']} electronic.relaxation.rates_csv: "
+                          f"{'found' if path.is_file() else 'missing'} {path}")
                 continue
+            elif args.command == "thermoelectric":
+                result = analyze_thermoelectric(config, model)
+            elif args.command == "electron-export":
+                result = export_electron_states(config, model)
             else:
-                result = {"modes": analyze_modes, "gk": analyze_gk, "dsf": analyze_dsf}[args.command](config, model)
+                result = {"modes": analyze_modes, "gk": analyze_gk, "dsf": analyze_dsf,
+                          "electrons": analyze_electrons}[args.command](config, model)
             print(f"Written: {result}")
         return 0
     except (ValueError, TypeError) as exc:
