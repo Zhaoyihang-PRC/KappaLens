@@ -247,9 +247,9 @@ def _report(summary: dict, rows: list[dict]) -> str:
                      f"{row['shift_mev']:.3f} |")
     lines.extend(["", "## Checks", "",
                   f"- INCAR source: {summary['incar_source']}",
-                  f"- POSCAR original match: {bool(summary['original_inputs'].get('poscar'))}",
-                  f"- KPOINTS original match: {bool(summary['original_inputs'].get('kpoints'))}",
-                  f"- OUTCAR completion check: {bool(summary['outcar'])}",
+                  "- POSCAR original match: " + ("passed" if summary["original_inputs"].get("poscar") else "not checked"),
+                  "- KPOINTS original match: " + ("passed" if summary["original_inputs"].get("kpoints") else "not checked"),
+                  "- OUTCAR version/completion: " + ("passed" if summary["outcar"] else "not checked"),
                   f"- ISPIN={summary['incar']['ISPIN']}, ISYM={summary['incar']['ISYM']}",
                   f"- Fan shape: {summary['self_energy']['fan_shape']}",
                   f"- Debye–Waller shape: {summary['self_energy']['dw_shape']}",
