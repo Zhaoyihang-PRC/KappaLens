@@ -10,6 +10,7 @@
       "atom_map": "data/demo_a/atom_map.csv",
       "groups_csv": "data/demo_a/groups.csv",
       "temperature_k": 300,
+      "electron_phonon": {"vaspout_h5": "data/demo_a/vaspout-synthetic.h5"},
       "electronic": {
         "source": "states_csv",
         "full_brillouin_zone": true,
@@ -46,6 +47,7 @@
       "atom_map": "data/demo_b/atom_map.csv",
       "groups_csv": "data/demo_b/groups.csv",
       "temperature_k": 300,
+      "electron_phonon": {"vaspout_h5": "data/demo_b/vaspout-synthetic.h5"},
       "electronic": {
         "source": "states_csv",
         "full_brillouin_zone": true,

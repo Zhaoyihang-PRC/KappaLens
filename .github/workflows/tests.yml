@@ -27,6 +27,7 @@ jobs:
           kappalens gk --config examples/demo/project.json
           kappalens dsf --config examples/demo/project.json
           kappalens electrons --config examples/demo/project.json
+          kappalens renorm --config examples/demo/project.json
           kappalens thermoelectric --config examples/demo/project.json
           kappalens compare --config examples/demo/project.json --stage modes
           kappalens compare --config examples/demo/project.json --stage gk

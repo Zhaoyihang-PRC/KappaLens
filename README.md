@@ -26,6 +26,7 @@ trajectories, manuscripts, or server configuration are included.
 | `compare` | Completed summaries for multiple systems | Component tables and pairwise differences | Like-for-like comparison within one method |
 | `electron-export` | Legacy VASP `EIGENVAL`, `GROUPVEC`, `KPOINTS`, `SYMMETRY`, `POSCAR` | Checked full-mesh state table with stable IDs | Format conversion, no transport calculation |
 | `electrons` | Explicit electronic states and one lifetime source | Full `σ`, `S`, `κₑ` tensors, carrier scan, diagnostics | Independent-band Boltzmann RTA |
+| `renorm` | VASP `vaspout.h5` electron–phonon gap data | Version and shape checks; gap-versus-temperature CSV and Markdown report | Read-only band-gap renormalization, independent of transport |
 | `thermoelectric` | Completed `electrons` and `modes` or `gk` summaries | `κₑ + κₗ`, power factor, conditional `ZT` | Joined only after matching temperature, direction and normalization |
 
 The group names are user-defined: `framework`/`pendant`, `mainchain`/
@@ -60,11 +61,30 @@ instead use an explicit `heat_current_groups` list without a phonon atom map.
   electron–phonon, impurity, or hopping rates from first principles. Named
   rate columns must come from a validated external calculation. This separation
   follows the scope of band-transport tools such as TransOpt [14](#ref-14)
-  and the limits emphasized by first-principles scattering work
-  [15](#ref-15), [16](#ref-16), [19](#ref-19).
+  and Yang and co-workers' discussion of deformation-potential and full
+  electron–phonon scattering [20](#ref-20), [21](#ref-21). First-principles
+  scattering studies explain why a constant lifetime is insufficient in some
+  systems [15](#ref-15), [16](#ref-16), [19](#ref-19).
+- `renorm` reads VASP electron–phonon HDF5 gaps and checks the Fan and
+  Debye–Waller arrays. It reports `E_gap(T)` and the shift from the Kohn–Sham
+  gap; it does not infer lifetimes, renormalized velocities, or atom-group
+  contributions. See the official [VASP gap workflow](https://vasp.at/wiki/Bandgap_renormalization_due_to_electron-phonon_coupling),
+  [accumulator layout](https://vasp.at/wiki/Electron-phonon_accumulators), and
+  [known issues](https://vasp.at/wiki/Known_issues). The renormalization
+  studies by Ning *et al.* [22](#ref-22) and Zhao *et al.* [23](#ref-23)
+  motivate temperature and band-edge checks; they do not validate this reader.
+- Related work by Yang and co-workers on phonon scattering from carriers
+  [24](#ref-24) and validated machine-learning potentials for half-Heusler
+  lattice transport [25](#ref-25) provides future-method context. Neither
+  TTEP nor a fitted force field is implemented in KappaLens.
+- Main-chain/side-chain analysis is motivated by the polymer two-channel study
+  of Xu *et al.* [26](#ref-26); the stacking-sensitive 2D framework study of
+  Lu *et al.* [27](#ref-27) is a separate material example. These studies do
+  not establish the same mechanism in every organic framework. Lu *et al.*
+  is **not** a Jiong Yang group paper.
 
 These references explain the underlying methods and their limitations. They
-do **not** validate KappaLens against real Phono3py or MD outputs.
+do **not** validate KappaLens against real VASP, Phono3py or MD outputs.
 
 See the official [Phono3py HDF5 format](https://phonopy.github.io/phono3py/input-output-files.html),
 [interband transport](https://phonopy.github.io/phono3py/inter-band-transport.html),
@@ -86,6 +106,7 @@ kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
 kappalens electrons --config examples/demo/project.json
+kappalens renorm --config examples/demo/project.json
 kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
@@ -239,6 +260,11 @@ nonpolar low-energy modes that a single polar-optical-frequency model misses
 in a 2D COF [16](#ref-16). EPW/Perturbo or another verified source may
 produce these rates, but native output conversion and k/band alignment must
 be validated separately [19](#ref-19).
+The distinction between a deformation-potential approximation and full
+mode-resolved electron–phonon scattering is discussed by Xi *et al.*
+[20](#ref-20); Yang and co-workers' high-throughput workflow [21](#ref-21)
+is a reference for screening assumptions, not a claim that this demo
+calculates deformation potentials.
 
 Set `dimensionality` explicitly to `3d` or `2d`; for a 2D sheet provide
 `sheet_normal_cart`, `sheet_repeat_length_ang`, and in-plane
@@ -265,7 +291,55 @@ only if energy references are aligned. Density-based scans are generally more
 useful for different chemical structures. `compare --stage electrons` checks
 the basis, temperature, dimensionality, direction vectors and scan grid.
 
-### 6. Join electronic and lattice estimates only when comparable
+### 6. VASP electron–phonon renormalization HDF5 demo
+
+`renorm` is a separate, read-only path. Add this to a model and run
+`kappalens renorm --config project.json --model NAME`:
+
+```json
+"electron_phonon": {
+  "vaspout_h5": "path/to/vaspout.h5",
+  "incar": "path/to/INCAR",
+  "poscar": "path/to/POSCAR",
+  "kpoints": "path/to/KPOINTS",
+  "outcar": "path/to/OUTCAR",
+  "accumulator": 1
+}
+```
+
+`incar` is optional if the HDF5 file contains a readable `/original/incar`.
+If both are present, relevant settings must agree. Optional `outcar` checks
+the independently printed VASP version and completed-run footer.
+Optional `poscar` and `kpoints` must match the originals embedded in the HDF5
+file (apart from line endings and final blank lines). These checks never copy
+the input contents to the output report.
+`accumulator` is optional
+only when there is exactly one `self_energy_N` group. If the gap has more than
+one channel, set zero-based `gap_channel`; if the temperature axis is
+ambiguous, set zero-based `temperature_axis`. The reader checks VASP version,
+spin and symmetry settings, complete Fan/Debye–Waller arrays, temperatures,
+band count, broadening and gap shapes. It blocks VASP 6.5.0/6.5.1 `ISPIN=2`
+results because of [known issues 54 and 65](https://vasp.at/wiki/Known_issues), and
+requires `ISYM=0` for magnetic demo results because of open issue 109.
+`summary.json`, `gaps.csv` and `report.md` appear under
+`analysis_results/NAME/renorm/`. A 0 K row gives the zero-point gap shift.
+
+The synthetic generator makes `vaspout-synthetic.h5` in each toy model's
+ignored data directory. It demonstrates the documented layout and rejection
+checks; it is **not** an actual VASP output or a compatibility validation
+against one. The first real output must be checked against VASP or py4vasp,
+then convergence in supercell size, k/q meshes, ENCUT, band sums and
+broadening must be established separately. The Fan/Debye–Waller arrays are
+checked for shape and finite values; the demo does not assign their individual
+contributions to a gap without validated band-edge mapping. It also does not
+feed corrected gaps into `electrons`, which still uses its explicit state and
+lifetime inputs. `vaspout.h5` may contain licensed POTCAR contents: do not
+publish an unredacted real file. [VASP HDF5 guidance](https://vasp.at/wiki/Vaspout.h5).
+Examples by Yang and co-workers show why the temperature, band edge, and
+electronic state being compared matter [22](#ref-22), [23](#ref-23); a gap
+shift alone is not a corrected mobility or electronic thermal conductivity.
+
+### 7. Join electronic and lattice estimates only when comparable
 
 `kappalens thermoelectric --config project.json --model NAME` reads completed
 results; it never reruns either calculation. Set `thermoelectric.lattice_stage`
@@ -281,7 +355,7 @@ uncertainty. No electronic rate is mistaken for a phonon lifetime.
 
 ## Development and release status
 
-This is version **0.2.0**, an alpha demo. The repository contains synthetic
+This is version **0.3.0**, an alpha demo. The repository contains synthetic
 tests and CI; any new reader or scientific interpretation should be validated
 against real, independently checked software outputs before publication of a
 material result. Contributions and issue reports should include a minimal
@@ -314,6 +388,7 @@ KappaLens 读取已有的 Phono3py 热导结果、分组热流时间序列和振
 | `compare` | 多个体系已经完成的结果 | 同一方法下的分组表和体系间差值 |
 | `electron-export` | 旧式 VASP `EIGENVAL/GROUPVEC` 等文件 | 核查后展开为带稳定编号的全 k 网格电子态表 |
 | `electrons` | 电子能量、速度及一种寿命来源 | 电导、Seebeck、电子热导的完整张量和载流子扫描 |
+| `renorm` | VASP `vaspout.h5` 中的电声自能与带隙 | 检查版本和数据对应关系，生成带隙随温度变化的报告；不计算电输运 |
 | `thermoelectric` | 分别完成的电子与晶格结果 | 在维度和单位一致时合并为功率因子与条件性 `ZT` |
 
 原子组名称可以是 `framework`/`pendant`、`mainchain`/`sidechain` 等，不要求
@@ -328,7 +403,7 @@ MD 的 Green–Kubo 分析时可以直接指定 `heat_current_groups`，无需�
 [9](#ref-9), [10](#ref-10))。有限孤立分子没有这里使用的体相热导张量；
 含真空二维晶胞的 W/(m·K) 数值也需先明确片层厚度或面热导归一化
 ([13](#ref-13))。这些文献说明方法背景与限制，**不等于** KappaLens 已经通过
-真实 Phono3py 或 MD 数据的验证。
+真实 VASP、Phono3py 或 MD 数据的验证。
 
 ## 安装并运行完整的合成示例
 
@@ -344,6 +419,7 @@ kappalens modes --config examples/demo/project.json
 kappalens gk --config examples/demo/project.json
 kappalens dsf --config examples/demo/project.json
 kappalens electrons --config examples/demo/project.json
+kappalens renorm --config examples/demo/project.json
 kappalens thermoelectric --config examples/demo/project.json
 kappalens compare --config examples/demo/project.json --stage modes
 kappalens compare --config examples/demo/project.json --stage gk
@@ -427,7 +503,8 @@ CSV 需要等间隔的 `time_ps` 或 `time_fs` 列、`Q_total_x/y/z`，以及各
 ### 独立的电子输运模块
 
 新模块独立实现电子玻尔兹曼弛豫时间近似，没有复制、打包或调用 TransOpt
-源码；原先的 `modes/gk/dsf` 命令及其输入格式不受影响。它用**矩阵运算**
+源码；可参阅杨炯老师参与的 TransOpt 论文及电声输运综述
+([14](#ref-14), [20](#ref-20))。原先的 `modes/gk/dsf` 命令及其输入格式不受影响。它用**矩阵运算**
 处理非对角张量，先汇总自旋通道的输运矩再求 Seebeck 与电子热导，不再按
 张量元素各自相乘。旧式 VASP 读取器检查完整 k 网格与对称性，并要求用户
 明确声明速度单位、自旋简并和是否使用时间反演。标准 VASP 输出未必含有
@@ -460,9 +537,27 @@ CSV 需要等间隔的 `time_ps` 或 `time_fs` 列、`Q_total_x/y/z`，以及各
 相应 `ZT` 标记为近似指标，不能冒充包含 Wigner 带间贡献的完整结果。
 英文部分提供了完整 JSON 字段和输出含义。
 
+`renorm` 是独立入口。在每个模型下配置 `electron_phonon.vaspout_h5`，可再指定
+`incar`、`poscar`、`kpoints`、`outcar` 和自能累加器编号 `accumulator`。提供
+`poscar` / `kpoints` 时核对 HDF5 内的原始输入文本；提供 `outcar` 时额外核对
+版本与正常结束标记。报告不会复制输入结构。输出为 `renorm/summary.json`、
+`gaps.csv` 和 `report.md`，列出 Kohn–Sham 带隙、重整化带隙及 meV 修正。
+它检查 Fan/Debye–Waller 数据、温度与版本，但不会把带隙修正自动当作电子
+寿命或速度。**VASP 6.5.0/6.5.1 的 `ISPIN=2` 电声结果会被拒绝**；磁性
+体系的示例还要求 `ISYM=0`。这对应 VASP 官方[已知问题](https://vasp.at/wiki/Known_issues)。
+合成 HDF5 仅供接口演示，真实文件仍需与 VASP/py4vasp 核对并完成收敛检查。
+真实 `vaspout.h5` 可能包含有许可证限制的 POTCAR 内容，不能直接上传公开仓库。
+带隙温度变化的研究背景见杨炯老师参与的填充方钴矿和二维材料论文
+([22](#ref-22), [23](#ref-23))；这些论文不能替代本程序对真实 VASP 输出的
+独立验证。杨老师团队的 TTEP 与 HH130 论文
+([24](#ref-24), [25](#ref-25)) 是后续载流子-声子散射和机器学习势研究的
+参考，本 demo 未实现这些方法。主链/侧链热输运的对照背景见
+[Xu *et al.*](#ref-26)；侧链改变堆垛与电输运的二维框架实例见
+[Lu *et al.*](#ref-27)，后者**不是**杨炯老师课题组论文。
+
 ## 开发状态
 
-当前版本 **0.2.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
+当前版本 **0.3.0** 为演示版，含合成测试和 CI。真实材料的科学结果仍需使用
 独立核验过的输出进行验证。提交问题或改进建议时请使用合成或可公开的最小
 示例，不要上传尚未公开的研究数据。
 
@@ -487,11 +582,19 @@ not validation results for this demo. 使用真实结果撰写论文时，还应
 - <a id="ref-11"></a>**[11]** Ercole, L., Marcolongo, A. & Baroni, S. “Accurate thermal conductivities from optimally short molecular dynamics simulations.” *Scientific Reports* **7**, 15835 (2017). [doi:10.1038/s41598-017-15843-2](https://doi.org/10.1038/s41598-017-15843-2). Green–Kubo estimation and uncertainty context.
 - <a id="ref-12"></a>**[12]** Fransson, E., Slabanja, M., Erhart, P. & Wahnström, G. “dynasor—A tool for extracting dynamical structure factors and current correlation functions from molecular dynamics simulations.” *Advanced Theory and Simulations* **4**, 2000240 (2021). [doi:10.1002/adts.202000240](https://doi.org/10.1002/adts.202000240). Spectral analysis context.
 - <a id="ref-13"></a>**[13]** Wu, X. *et al.* “How to characterize thermal transport capability of 2D materials fairly? Sheet thermal conductance and the choice of thickness.” *Chemical Physics Letters* **669**, 233–237 (2017). [doi:10.1016/j.cplett.2016.12.054](https://doi.org/10.1016/j.cplett.2016.12.054). Thickness convention for 2D comparisons.
-- <a id="ref-14"></a>**[14]** Li, X. *et al.* “TransOpt. A code to solve electrical transport properties of semiconductors in constant electron–phonon coupling approximation.” *Computational Materials Science* (2021). [doi:10.1016/j.commatsci.2020.110074](https://doi.org/10.1016/j.commatsci.2020.110074). Historical comparison; no TransOpt code is included.
+- <a id="ref-14"></a>**[14]** Li, X., Zhang, Z., Xi, J., Singh, D. J., Sheng, Y., Yang, J. & Zhang, W. “TransOpt. A code to solve electrical transport properties of semiconductors in constant electron–phonon coupling approximation.” *Computational Materials Science* **186**, 110074 (2021). [doi:10.1016/j.commatsci.2020.110074](https://doi.org/10.1016/j.commatsci.2020.110074). Yang-group software comparison; no TransOpt code is included.
 - <a id="ref-15"></a>**[15]** Ganose, A. M. *et al.* “Efficient calculation of carrier scattering rates from first principles.” *Nature Communications* **12**, 2222 (2021). [doi:10.1038/s41467-021-22440-5](https://doi.org/10.1038/s41467-021-22440-5). Anisotropic scattering and the limits of constant lifetime models.
 - <a id="ref-16"></a>**[16]** “Phonon-Limited Electron Transport in a Highly Conductive Two-Dimensional Covalent Organic Framework: A Computational Study.” *Journal of Physical Chemistry C* **126**, 20127–20134 (2022). [doi:10.1021/acs.jpcc.2c06211](https://doi.org/10.1021/acs.jpcc.2c06211). Mode-resolved optical-phonon scattering in a 2D COF.
 - <a id="ref-17"></a>**[17]** Hutsch, S. & Ortmann, F. “Impact of heteroatoms and chemical functionalisation on crystal structure and carrier mobility of organic semiconductors.” *npj Computational Materials* **10**, 206 (2024). [doi:10.1038/s41524-024-01397-1](https://doi.org/10.1038/s41524-024-01397-1). Dynamic-disorder context.
 - <a id="ref-18"></a>**[18]** “Intuitive and Efficient Approach to Determine the Band Structure of Covalent Organic Frameworks from Their Chemical Constituents.” *Journal of Chemical Theory and Computation* (2024). [doi:10.1021/acs.jctc.3c01302](https://doi.org/10.1021/acs.jctc.3c01302). Localized representation and alternative transport regimes in soft COFs.
 - <a id="ref-19"></a>**[19]** “Perturbo: A software package for ab initio electron–phonon interactions, charge transport and ultrafast dynamics.” *Computer Physics Communications* **264**, 107970 (2021). [doi:10.1016/j.cpc.2021.107970](https://doi.org/10.1016/j.cpc.2021.107970). External state-resolved scattering and iterative BTE comparison.
+- <a id="ref-20"></a>**[20]** Xi, J., Zhu, Z., Xi, L. & Yang, J. “Perspective of the electron–phonon interaction on the electrical transport in thermoelectric/electronic materials.” *Applied Physics Letters* **120**, 190503 (2022). [doi:10.1063/5.0089987](https://doi.org/10.1063/5.0089987). Yang-group perspective on approximate versus full electron–phonon scattering; context, not an implemented solver.
+- <a id="ref-21"></a>**[21]** Jin, Y., Wang, X., Yao, M., Qiu, D., Singh, D. J., Xi, J., Yang, J. & Xi, L. “High-throughput deformation potential and electrical transport calculations.” *npj Computational Materials* **9**, 190 (2023). [doi:10.1038/s41524-023-01153-x](https://doi.org/10.1038/s41524-023-01153-x). Yang-group screening method; KappaLens does not calculate deformation potentials.
+- <a id="ref-22"></a>**[22]** Ning, J., Lei, W., Yang, J. & Xi, J. “First-principles study of the temperature-induced band renormalization in thermoelectric filled skutterudites.” *Physical Chemistry Chemical Physics* **25**, 26006–26013 (2023). [doi:10.1039/D3CP03596D](https://doi.org/10.1039/D3CP03596D). Yang-group example of temperature-dependent band renormalization and state linewidths.
+- <a id="ref-23"></a>**[23]** Zhao, Y., Li, Y., Xi, J. & Yang, J. “Significant temperature tunability of the band gap in two-dimensional materials.” *Computational Materials Today* **5**, 100019 (2025). [doi:10.1016/j.commt.2024.100019](https://doi.org/10.1016/j.commt.2024.100019). Yang-group 2D example showing band-edge and wave-vector dependence of thermal gap shifts.
+- <a id="ref-24"></a>**[24]** Dai, S., Gan, L., Xi, J. & Yang, J. “TTEP: A code for efficient calculation of the thermal transport from constant electron-phonon coupling approximation.” *Computational Materials Science* **244**, 113190 (2024). [doi:10.1016/j.commatsci.2024.113190](https://doi.org/10.1016/j.commatsci.2024.113190). Yang-group phonon-transport method with approximate carrier–phonon scattering; not implemented here.
+- <a id="ref-25"></a>**[25]** Yang, Y., Lin, Y., Dai, S., Zhu, Y., Xi, J., Xi, L., Gu, X., Singh, D. J., Zhang, W. & Yang, J. “HH130: a standardized database of machine learning interatomic potentials, datasets, and its applications in the thermal transport of half-Heusler thermoelectrics.” *Digital Discovery* **3**, 2201–2210 (2024). [doi:10.1039/D4DD00240G](https://doi.org/10.1039/D4DD00240G). Yang-group validation and higher-order-scattering context; its half-Heusler potentials are not COF potentials.
+- <a id="ref-26"></a>**[26]** Xu, C., Wang, D., Zhu, Z. *et al.* “Understanding thermal transport in polymer semiconductors via two-channel mechanism.” *Nature Communications* **16**, 11545 (2025). [doi:10.1038/s41467-025-66720-w](https://doi.org/10.1038/s41467-025-66720-w). Main-chain/side-chain thermal-transport motivation in polymers; not a universal COF result or a Yang-group paper.
+- <a id="ref-27"></a>**[27]** Lu, Y. *et al.* “Tunable Charge Transport and Spin Dynamics in Two-Dimensional Conjugated Metal–Organic Frameworks.” *Journal of the American Chemical Society* **146**, 2574–2582 (2024). [doi:10.1021/jacs.3c11172](https://doi.org/10.1021/jacs.3c11172). Stacking and side-group material context; authored by Yang Lu and collaborators, not Jiong Yang.
 
 Software format details should be checked against the current [Phono3py HDF5 documentation](https://phonopy.github.io/phono3py/input-output-files.html), [Phono3py citation guidance](https://phonopy.github.io/phono3py/citation.html), and [LAMMPS heat-flux documentation](https://docs.lammps.org/compute_heat_flux.html).
