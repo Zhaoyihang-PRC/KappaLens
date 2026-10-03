@@ -211,6 +211,9 @@ section. It never calls `modes`, `gk`, `dsf`, or TransOpt. Choose one source:
   weights must sum to one, and every k/spin combination must have the same
   bands. Set `spin_degeneracy` explicitly: `2` for a nonmagnetic calculation
   without SOC, `1` for explicit spin channels or SOC spinors.
+  Set `full_brillouin_zone: true` only after confirming the table contains the
+  full integration grid. Irreducible k weights can also sum to one but do not
+  suffice for a general tensor without symmetry rotation.
 - `source: "vasp_legacy"`: specify `eigenval`, `groupvec`, `kpoints`,
   `symmetry`, and `poscar`. This adapter accepts the legacy `GROUPVEC` layout;
   standard VASP calculations do **not** necessarily create `GROUPVEC`.
@@ -432,6 +435,8 @@ CSV 需要等间隔的 `time_ps` 或 `time_fs` 列、`Q_total_x/y/z`，以及各
 
 最通用的输入是 `states_csv`：每个电子态一行，含
 `state_id,k_index,band_index,spin,energy_ev,v_x_m_s,v_y_m_s,v_z_m_s,k_weight`。
+确认覆盖完整布里渊区后才设置 `full_brillouin_zone: true`；仅有权重和为一的
+不可约 k 网格不能直接用于一般输运张量。
 也可选 `source: "vasp_legacy"`，提供 `eigenval/groupvec/kpoints/symmetry/poscar`；
 先执行 `electron-export` 检查全网格状态编号，再用这些编号制作外部
 散射率表。`relaxation` 只能选恒定 `tau_s`、每态 `tau_s`，或按 `state_id`

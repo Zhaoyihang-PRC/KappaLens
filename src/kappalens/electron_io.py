@@ -55,6 +55,10 @@ def _spin_degeneracy(options: dict, spins: np.ndarray) -> int:
 
 
 def read_states_csv(config: dict, model: dict, options: dict) -> ElectronStates:
+    if options.get("full_brillouin_zone") is not True:
+        raise AnalysisError("states_csv needs full_brillouin_zone=true after verifying the table "
+                            "covers the full k mesh. Irreducible k weights alone are insufficient "
+                            "for a general tensor.")
     path = resolve(config, options.get("states_csv"), "electronic.states_csv")
     required = {"state_id", "k_index", "band_index", "spin", "energy_ev",
                 "v_x_m_s", "v_y_m_s", "v_z_m_s", "k_weight"}

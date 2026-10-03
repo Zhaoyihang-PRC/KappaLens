@@ -30,6 +30,7 @@ class ElectronTest(unittest.TestCase):
         self.model = {"name": "toy", "temperature_k": 300,
                       "directions_cart": {"x": [1, 0, 0], "y": [0, 1, 0]},
                       "electronic": {"source": "states_csv", "states_csv": "states.csv",
+                                     "full_brillouin_zone": True,
                                      "spin_degeneracy": 2, "cell_volume_ang3": 1000,
                                      "dimensionality": "3d", "chemical_potentials_ev": [0.0],
                                      "relaxation": {"mode": "constant", "tau_s": 2e-14}}}

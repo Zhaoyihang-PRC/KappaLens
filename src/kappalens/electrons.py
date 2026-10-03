@@ -314,6 +314,12 @@ def analyze_electrons(config: dict, model: dict) -> Path:
                "spin_degeneracy": states.spin_degeneracy,
                "reference_electrons_per_cell": states.reference_electrons_per_cell,
                "state_count": len(states.state_id), "relaxation_mode": options["relaxation"]["mode"],
+               "rate_mechanisms": list(mechanisms),
+               "velocity_unit": options.get("velocity_unit", "m_per_s"),
+               "time_reversal_expansion": options.get("time_reversal") if options["source"] == "vasp_legacy" else None,
+               "carrier_scan_type": next(name for name in ("chemical_potentials_ev",
+                   "extra_electrons_per_cell", "extra_carriers_cm3", "extra_carriers_cm2")
+                   if options.get(name) is not None),
                "input_sources": states.sources, "results": [],
                "interpretation": {
                    "state_character": "Transport-kernel-weighted orbital character, not unique group-owned conductivity.",

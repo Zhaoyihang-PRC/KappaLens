@@ -12,6 +12,7 @@
       "temperature_k": 300,
       "electronic": {
         "source": "states_csv",
+        "full_brillouin_zone": true,
         "states_csv": "data/demo_a/electron_states.csv",
         "spin_degeneracy": 2,
         "cell_volume_ang3": 2000,
@@ -47,6 +48,7 @@
       "temperature_k": 300,
       "electronic": {
         "source": "states_csv",
+        "full_brillouin_zone": true,
         "states_csv": "data/demo_b/electron_states.csv",
         "spin_degeneracy": 2,
         "cell_volume_ang3": 2000,
